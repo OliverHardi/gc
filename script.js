@@ -19,9 +19,25 @@ const db = getFirestore(app);
 // 3. WebRTC Configuration (Google's public STUN server helps find IP addresses)
 const servers = {
     iceServers: [
+        // stun servers
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        // Add a free TURN server here if you have one
+        // turn servers for direct connection fail
+        {
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayprojectsecret"
+        },
+        {
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayprojectsecret"
+        },
+        {
+            urls: "turn:openrelay.metered.ca:443?transport=tcp",
+            username: "openrelayproject",
+            credential: "openrelayprojectsecret"
+        }
     ]
 };
 const pc = new RTCPeerConnection(servers);
@@ -167,7 +183,7 @@ async function joinRoom(roomId) {
             console.log("Answer saved with full network paths!");
         }
     };
-    
+
     // Listen for Caller's ICE candidates
     onSnapshot(collection(roomRef, "callerCandidates"), (snapshot) => {
         snapshot.docChanges().forEach((change) => {
