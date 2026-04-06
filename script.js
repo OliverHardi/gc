@@ -138,12 +138,19 @@ async function joinRoom(roomId) {
     });
 }
 
-// =======================================================
-// EVENT LISTENERS
-// =======================================================
+
 createBtn.addEventListener("click", createRoom);
 
 joinBtn.addEventListener("click", () => {
     const roomId = prompt("Enter Room ID:");
     if (roomId) joinRoom(roomId);
 });
+
+function sendMessage(message){
+    if (dataChannel && dataChannel.readyState === "open") {
+        dataChannel.send(message);
+        logMessage(message, "You");
+    } else {
+        alert("Connection not established yet!");
+    }
+}
