@@ -79,44 +79,37 @@ async function createRoom() {
     createBtn.disabled = true;
     joinBtn.disabled = true;
 
-    // Create the data channel first
     setupDataChannel(pc.createDataChannel("chat"));
 
-    // Create a room in Firebase
-    // custom room name
     const customName = prompt("Enter a room name (e.g., MyChat):");
     if (!customName) return;
     const roomRef = doc(db, "rooms", customName);
 
     roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> (Gathering candidates...)`;
 
-    
-    // Save Caller's ICE Candidates to Firebase
     pc.onicecandidate = (event) => {
         if (event.candidate) {
             addDoc(collection(roomRef, "callerCandidates"), event.candidate.toJSON());
         }
     };
 
-    // Create Offer
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    await new Promise((resolve) => {
-        if (pc.iceGatheringState === 'complete') {
-            resolve();
-        } else {
-            pc.onicegatheringstatechange = () => {
-                if (pc.iceGatheringState === 'complete') resolve();
-            };
-        }
+    // ✅ Assign the handler BEFORE setLocalDescription triggers gathering
+    const gatheringComplete = new Promise((resolve) => {
+        const timeout = setTimeout(resolve, 3000);
+        pc.onicegatheringstatechange = () => {
+            if (pc.iceGatheringState === 'complete') {
+                clearTimeout(timeout);
+                resolve();
+            }
+        };
     });
-    
-    
 
-    roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> - Ready! Share with your friend.`;
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer); // ← gathering starts HERE
 
-    // Listen for Callee's Answer
+    await gatheringComplete; // ← handler already assigned, won't miss it
+
+    // Start listeners before writing offer
     onSnapshot(roomRef, (snapshot) => {
         const data = snapshot.data();
         if (!pc.remoteDescription && data && data.answer) {
@@ -124,7 +117,6 @@ async function createRoom() {
         }
     });
 
-    // Listen for Callee's ICE Candidates
     onSnapshot(collection(roomRef, "calleeCandidates"), (snapshot) => {
         snapshot.docChanges().forEach((change) => {
             if (change.type === 'added') {
@@ -133,10 +125,11 @@ async function createRoom() {
         });
     });
 
-    // Save Offer to Firebase
     await setDoc(roomRef, {
         offer: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }
     });
+
+    roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> - Ready! Share with your friend.`;
 }
 
 // join
