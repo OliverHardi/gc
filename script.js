@@ -1,7 +1,6 @@
 // 1. Import Firebase SDKs from CDN
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
+import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 // 2. Your Web App's Firebase Configuration (Pasted from your prompt)
 const firebaseConfig = {
   apiKey: "AIzaSyAZVleqPUw4XD-Z6bWo0hdZk3WZV53KNCY",
@@ -18,7 +17,13 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 // 3. WebRTC Configuration (Google's public STUN server helps find IP addresses)
-const servers = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const servers = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        // Add a free TURN server here if you have one
+    ]
+};
 const pc = new RTCPeerConnection(servers);
 let dataChannel = null;
 
@@ -56,6 +61,7 @@ function setupDataChannel(channel) {
 // =======================================================
 // CALLER FLOW (Computer A creates the room)
 // =======================================================
+
 async function createRoom() {
     createBtn.disabled = true;
     joinBtn.disabled = true;
@@ -64,7 +70,12 @@ async function createRoom() {
     setupDataChannel(pc.createDataChannel("chat"));
 
     // Create a room in Firebase
-    const roomRef = await addDoc(collection(db, "rooms"), {});
+    // custom room name
+    const customName = prompt("Enter a room name (e.g., MyChat):");
+    if (!customName) return;
+
+    const roomRef = doc(db, "rooms", customName);
+
     roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> (Share this with your friend!)`;
     
     // Save Caller's ICE Candidates to Firebase
@@ -79,8 +90,13 @@ async function createRoom() {
     await pc.setLocalDescription(offer);
     
     // Save Offer to Firebase
-    await updateDoc(roomRef, { offer: { type: offer.type, sdp: offer.sdp } });
-
+    await setDoc(roomRef, { 
+        offer: { 
+            type: offer.type, 
+            sdp: offer.sdp 
+        } 
+    });
+    
     // Listen for Callee's Answer
     onSnapshot(roomRef, (snapshot) => {
         const data = snapshot.data();
@@ -167,3 +183,10 @@ sendButton.addEventListener("click", () => {
         messageInput.value = "";
     }
 });
+
+pc.oniceconnectionstatechange = () => {
+    console.log("ICE Connection State:", pc.iceConnectionState);
+    if (pc.iceConnectionState === "failed") {
+        console.error("Connection failed. You likely need a TURN server for this network.");
+    }
+};
