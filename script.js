@@ -73,10 +73,10 @@ async function createRoom() {
     // custom room name
     const customName = prompt("Enter a room name (e.g., MyChat):");
     if (!customName) return;
-
     const roomRef = doc(db, "rooms", customName);
 
     roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> (Share this with your friend!)`;
+
     
     // Save Caller's ICE Candidates to Firebase
     pc.onicecandidate = (event) => {
@@ -88,6 +88,17 @@ async function createRoom() {
     // Create Offer
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
+
+    pc.onicegatheringstatechange = async () => {
+        if (pc.iceGatheringState === 'complete') {
+            // Now that we have gathered ALL candidates, the localDescription 
+            // will be updated with real network info.
+            await setDoc(roomRef, { 
+                offer: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } 
+            });
+            roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> - Ready!`;
+        }
+    };
     
     // Save Offer to Firebase
     await setDoc(roomRef, { 
@@ -96,7 +107,7 @@ async function createRoom() {
             sdp: offer.sdp 
         } 
     });
-    
+
     // Listen for Callee's Answer
     onSnapshot(roomRef, (snapshot) => {
         const data = snapshot.data();
