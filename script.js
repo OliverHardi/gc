@@ -54,7 +54,8 @@ async function createRoom() {
 
     // Create a room in Firebase
     const roomRef = await addDoc(collection(db, "rooms"), {});
-    roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> (Share this with your friend!)`;
+    // roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> (Share this with your friend!)`;
+    console.log(`Room created with ID: ${roomRef.id}`);
     
     // Save Caller's ICE Candidates to Firebase
     pc.onicecandidate = (event) => {
@@ -104,7 +105,8 @@ async function joinRoom(roomId) {
     }
     
     const data = roomSnapshot.data();
-    roomDisplay.innerHTML = `Room ID: <b>${roomId}</b>`;
+    console.log(`Joining room with ID: ${roomId}`);
+    // roomDisplay.innerHTML = `Room ID: <b>${roomId}</b>`;
 
     // Listen for the incoming Data Channel
     pc.ondatachannel = (event) => {
