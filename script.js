@@ -58,10 +58,7 @@ function setupDataChannel(channel) {
     };
 }
 
-// =======================================================
-// CALLER FLOW (Computer A creates the room)
-// =======================================================
-
+// create
 async function createRoom() {
     createBtn.disabled = true;
     joinBtn.disabled = true;
@@ -126,9 +123,7 @@ async function createRoom() {
     });
 }
 
-// =======================================================
-// CALLEE FLOW (Computer B joins the room)
-// =======================================================
+// join
 async function joinRoom(roomId) {
     createBtn.disabled = true;
     joinBtn.disabled = true;
@@ -164,8 +159,15 @@ async function joinRoom(roomId) {
     await pc.setLocalDescription(answer);
 
     // Save Answer to Firebase
-    await updateDoc(roomRef, { answer: { type: answer.type, sdp: answer.sdp } });
-
+    pc.onicegatheringstatechange = async () => {
+        if (pc.iceGatheringState === 'complete') {
+            await updateDoc(roomRef, { 
+                answer: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } 
+            });
+            console.log("Answer saved with full network paths!");
+        }
+    };
+    
     // Listen for Caller's ICE candidates
     onSnapshot(collection(roomRef, "callerCandidates"), (snapshot) => {
         snapshot.docChanges().forEach((change) => {
