@@ -1,49 +1,22 @@
-// 1. Import Firebase SDKs from CDN
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-// 2. Your Web App's Firebase Configuration (Pasted from your prompt)
+
 const firebaseConfig = {
-  apiKey: "AIzaSyAZVleqPUw4XD-Z6bWo0hdZk3WZV53KNCY",
-  authDomain: "chat-b5188.firebaseapp.com",
-  projectId: "chat-b5188",
-  storageBucket: "chat-b5188.firebasestorage.app",
-  messagingSenderId: "932995779691",
-  appId: "1:932995779691:web:87fab0b6e700c3e5c1b52e",
-  measurementId: "G-ZFEL28SYEG"
+    apiKey: "AIzaSyAZVleqPUw4XD-Z6bWo0hdZk3WZV53KNCY",
+    authDomain: "chat-b5188.firebaseapp.com",
+    projectId: "chat-b5188",
+    storageBucket: "chat-b5188.firebasestorage.app",
+    messagingSenderId: "932995779691",
+    appId: "1:932995779691:web:87fab0b6e700c3e5c1b52e",
+    measurementId: "G-ZFEL28SYEG"
 };
 
-// Initialize Firebase & Firestore
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// 3. WebRTC Configuration (Google's public STUN server helps find IP addresses)
-const servers = {
-    iceServers: [
-        // stun servers
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        // turn servers for direct connection fail
-        {
-            urls: "turn:openrelay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayprojectsecret"
-        },
-        {
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject",
-            credential: "openrelayprojectsecret"
-        },
-        {
-            urls: "turn:openrelay.metered.ca:443?transport=tcp",
-            username: "openrelayproject",
-            credential: "openrelayprojectsecret"
-        }
-    ]
-};
-const pc = new RTCPeerConnection(servers);
+let pc = null;
 let dataChannel = null;
 
-// Grab UI elements
 const createBtn = document.getElementById("createRoom");
 const joinBtn = document.getElementById("joinRoom");
 const roomDisplay = document.getElementById("roomDisplay");
@@ -51,33 +24,50 @@ const chatbox = document.getElementById("chatbox");
 const messageInput = document.getElementById("messageInput");
 const sendButton = document.getElementById("sendButton");
 
-// Helper function to show messages on screen
+async function getIceServers() {
+    const response = await fetch("https://mhs-chat.metered.live/api/v1/turn/credentials?apiKey=60346c336ffff46e32cf32b5d08f206e1875");
+
+    return await response.json();
+}
+
+function createPeerConnection(iceServers) {
+    pc = new RTCPeerConnection({ iceServers });
+
+    pc.oniceconnectionstatechange = () => {
+        console.log("ICE Connection State:", pc.iceConnectionState);
+        if (pc.iceConnectionState === "failed") {
+            console.error("Connection failed.");
+        }
+    };
+}
+
 function logMessage(text, sender) {
     const msgDiv = document.createElement("div");
     msgDiv.textContent = `${sender}: ${text}`;
     chatbox.appendChild(msgDiv);
-    chatbox.scrollTop = chatbox.scrollHeight; // Auto-scroll
+    chatbox.scrollTop = chatbox.scrollHeight;
 }
 
-// 4. Handle Incoming Data Channel Messages
 function setupDataChannel(channel) {
     dataChannel = channel;
-    
+
     dataChannel.onopen = () => {
         logMessage("Connected! You can now chat.", "System");
         messageInput.disabled = false;
         sendButton.disabled = false;
     };
-    
+
     dataChannel.onmessage = (event) => {
         logMessage(event.data, "Peer");
     };
 }
 
-// create
 async function createRoom() {
     createBtn.disabled = true;
     joinBtn.disabled = true;
+
+    const iceServers = await getIceServers();
+    createPeerConnection(iceServers);
 
     setupDataChannel(pc.createDataChannel("chat"));
 
@@ -85,7 +75,7 @@ async function createRoom() {
     if (!customName) return;
     const roomRef = doc(db, "rooms", customName);
 
-    roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> (Gathering candidates...)`;
+    roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> (Setting up...)`;
 
     pc.onicecandidate = (event) => {
         if (event.candidate) {
@@ -93,23 +83,16 @@ async function createRoom() {
         }
     };
 
-    // ✅ Assign the handler BEFORE setLocalDescription triggers gathering
-    const gatheringComplete = new Promise((resolve) => {
-        const timeout = setTimeout(resolve, 3000);
-        pc.onicegatheringstatechange = () => {
-            if (pc.iceGatheringState === 'complete') {
-                clearTimeout(timeout);
-                resolve();
-            }
-        };
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    // Write offer immediately, let candidates trickle via onicecandidate
+    await setDoc(roomRef, {
+        offer: { type: offer.type, sdp: offer.sdp }
     });
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer); // ← gathering starts HERE
+    roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> - Ready! Share with your friend.`;
 
-    await gatheringComplete; // ← handler already assigned, won't miss it
-
-    // Start listeners before writing offer
     onSnapshot(roomRef, (snapshot) => {
         const data = snapshot.data();
         if (!pc.remoteDescription && data && data.answer) {
@@ -124,60 +107,46 @@ async function createRoom() {
             }
         });
     });
-
-    await setDoc(roomRef, {
-        offer: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }
-    });
-
-    roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> - Ready! Share with your friend.`;
 }
 
-// join
 async function joinRoom(roomId) {
     createBtn.disabled = true;
     joinBtn.disabled = true;
 
+    const iceServers = await getIceServers();
+    createPeerConnection(iceServers);
+
     const roomRef = doc(db, "rooms", roomId);
     const roomSnapshot = await getDoc(roomRef);
-    
+
     if (!roomSnapshot.exists()) {
         alert("Room not found!");
         return;
     }
-    
+
     const data = roomSnapshot.data();
     roomDisplay.innerHTML = `Room ID: <b>${roomId}</b>`;
 
-    // Listen for the incoming Data Channel
     pc.ondatachannel = (event) => {
         setupDataChannel(event.channel);
     };
 
-    // Save Callee's ICE Candidates to Firebase
     pc.onicecandidate = (event) => {
         if (event.candidate) {
             addDoc(collection(roomRef, "calleeCandidates"), event.candidate.toJSON());
         }
     };
 
-    // Set Remote Offer
     await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
 
-    // Create Answer
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
-    // Save Answer to Firebase
-    pc.onicegatheringstatechange = async () => {
-        if (pc.iceGatheringState === 'complete') {
-            await updateDoc(roomRef, { 
-                answer: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } 
-            });
-            console.log("Answer saved with full network paths!");
-        }
-    };
+    // Write answer immediately, let candidates trickle
+    await updateDoc(roomRef, {
+        answer: { type: answer.type, sdp: answer.sdp }
+    });
 
-    // Listen for Caller's ICE candidates
     onSnapshot(collection(roomRef, "callerCandidates"), (snapshot) => {
         snapshot.docChanges().forEach((change) => {
             if (change.type === 'added') {
@@ -186,7 +155,6 @@ async function joinRoom(roomId) {
         });
     });
 }
-
 
 createBtn.addEventListener("click", createRoom);
 
@@ -203,10 +171,3 @@ sendButton.addEventListener("click", () => {
         messageInput.value = "";
     }
 });
-
-pc.oniceconnectionstatechange = () => {
-    console.log("ICE Connection State:", pc.iceConnectionState);
-    if (pc.iceConnectionState === "failed") {
-        console.error("Connection failed. You likely need a TURN server for this network.");
-    }
-};
