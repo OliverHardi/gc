@@ -88,7 +88,7 @@ async function createRoom() {
     if (!customName) return;
     const roomRef = doc(db, "rooms", customName);
 
-    roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> (Share this with your friend!)`;
+    roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> (Gathering candidates...)`;
 
     
     // Save Caller's ICE Candidates to Firebase
@@ -102,24 +102,19 @@ async function createRoom() {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    pc.onicegatheringstatechange = async () => {
+    await new Promise((resolve) => {
         if (pc.iceGatheringState === 'complete') {
-            // Now that we have gathered ALL candidates, the localDescription 
-            // will be updated with real network info.
-            await setDoc(roomRef, { 
-                offer: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } 
-            });
-            roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> - Ready!`;
+            resolve();
+        } else {
+            pc.onicegatheringstatechange = () => {
+                if (pc.iceGatheringState === 'complete') resolve();
+            };
         }
-    };
-    
-    // Save Offer to Firebase
-    await setDoc(roomRef, { 
-        offer: { 
-            type: offer.type, 
-            sdp: offer.sdp 
-        } 
     });
+    
+    
+
+    roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> - Ready! Share with your friend.`;
 
     // Listen for Callee's Answer
     onSnapshot(roomRef, (snapshot) => {
@@ -136,6 +131,11 @@ async function createRoom() {
                 pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
             }
         });
+    });
+
+    // Save Offer to Firebase
+    await setDoc(roomRef, {
+        offer: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }
     });
 }
 
@@ -194,9 +194,7 @@ async function joinRoom(roomId) {
     });
 }
 
-// =======================================================
-// EVENT LISTENERS
-// =======================================================
+
 createBtn.addEventListener("click", createRoom);
 
 joinBtn.addEventListener("click", () => {
