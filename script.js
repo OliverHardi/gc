@@ -1,61 +1,134 @@
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc } from "firebase/firestore";
+// 1. Import Firebase SDKs from CDN
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// Initialize Firebase
+// 2. Your Web App's Firebase Configuration (Pasted from your prompt)
+const firebaseConfig = {
+  apiKey: "AIzaSyAZVleqPUw4XD-Z6bWo0hdZk3WZV53KNCY",
+  authDomain: "chat-b5188.firebaseapp.com",
+  projectId: "chat-b5188",
+  storageBucket: "chat-b5188.firebasestorage.app",
+  messagingSenderId: "932995779691",
+  appId: "1:932995779691:web:87fab0b6e700c3e5c1b52e",
+  measurementId: "G-ZFEL28SYEG"
+};
+
+// Initialize Firebase & Firestore
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// 3. WebRTC Configuration (Google's public STUN server helps find IP addresses)
 const servers = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 const pc = new RTCPeerConnection(servers);
-const dataChannel = pc.createDataChannel("chat");
+let dataChannel = null;
 
-async function createRoom() {
-    // 1. Create a room in Firebase
-    const roomRef = await addDoc(collection(db, "rooms"), {});
+// Grab UI elements
+const createBtn = document.getElementById("create-room");
+const joinBtn = document.getElementById("join-room");
+
+
+// 4. Handle Incoming Data Channel Messages
+function setupDataChannel(channel) {
+    dataChannel = channel;
     
-    // 2. Get ICE candidates and save them to Firebase
+    dataChannel.onopen = () => {
+        logMessage("Connected! You can now chat.", "System");
+        messageInput.disabled = false;
+        sendButton.disabled = false;
+    };
+    
+    dataChannel.onmessage = (event) => {
+        logMessage(event.data, "Peer");
+    };
+}
+
+// =======================================================
+// CALLER FLOW (Computer A creates the room)
+// =======================================================
+async function createRoom() {
+    createBtn.disabled = true;
+    joinBtn.disabled = true;
+
+    // Create the data channel first
+    setupDataChannel(pc.createDataChannel("chat"));
+
+    // Create a room in Firebase
+    const roomRef = await addDoc(collection(db, "rooms"), {});
+    roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> (Share this with your friend!)`;
+    
+    // Save Caller's ICE Candidates to Firebase
     pc.onicecandidate = (event) => {
         if (event.candidate) {
             addDoc(collection(roomRef, "callerCandidates"), event.candidate.toJSON());
         }
     };
 
-    // 3. Create Offer
+    // Create Offer
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     
-    // 4. Save Offer to Firebase
+    // Save Offer to Firebase
     await updateDoc(roomRef, { offer: { type: offer.type, sdp: offer.sdp } });
 
-    // 5. Listen for the Answer from Computer B
+    // Listen for Callee's Answer
     onSnapshot(roomRef, (snapshot) => {
         const data = snapshot.data();
         if (!pc.remoteDescription && data && data.answer) {
-            const rtcAnswer = new RTCSessionDescription(data.answer);
-            pc.setRemoteDescription(rtcAnswer);
+            pc.setRemoteDescription(new RTCSessionDescription(data.answer));
         }
     });
 
-    console.log("Room created! Share this ID with your friend:", roomRef.id);
+    // Listen for Callee's ICE Candidates
+    onSnapshot(collection(roomRef, "calleeCandidates"), (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+            if (change.type === 'added') {
+                pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+            }
+        });
+    });
 }
 
+// =======================================================
+// CALLEE FLOW (Computer B joins the room)
+// =======================================================
 async function joinRoom(roomId) {
+    createBtn.disabled = true;
+    joinBtn.disabled = true;
+
     const roomRef = doc(db, "rooms", roomId);
     const roomSnapshot = await getDoc(roomRef);
+    
+    if (!roomSnapshot.exists()) {
+        alert("Room not found!");
+        return;
+    }
+    
     const data = roomSnapshot.data();
+    roomDisplay.innerHTML = `Room ID: <b>${roomId}</b>`;
 
-    // 1. Set Remote Offer
-    const offer = data.offer;
-    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    // Listen for the incoming Data Channel
+    pc.ondatachannel = (event) => {
+        setupDataChannel(event.channel);
+    };
 
-    // 2. Create Answer
+    // Save Callee's ICE Candidates to Firebase
+    pc.onicecandidate = (event) => {
+        if (event.candidate) {
+            addDoc(collection(roomRef, "calleeCandidates"), event.candidate.toJSON());
+        }
+    };
+
+    // Set Remote Offer
+    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+
+    // Create Answer
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
-    // 3. Save Answer to Firebase
+    // Save Answer to Firebase
     await updateDoc(roomRef, { answer: { type: answer.type, sdp: answer.sdp } });
 
-    // 4. Listen for ICE candidates from Computer A
+    // Listen for Caller's ICE candidates
     onSnapshot(collection(roomRef, "callerCandidates"), (snapshot) => {
         snapshot.docChanges().forEach((change) => {
             if (change.type === 'added') {
@@ -65,13 +138,12 @@ async function joinRoom(roomId) {
     });
 }
 
-pc.ondatachannel = (event) => {
-    const receiveChannel = event.channel;
-    receiveChannel.onmessage = (event) => {
-        console.log("New message:", event.data);
-    };
-};
+// =======================================================
+// EVENT LISTENERS
+// =======================================================
+createBtn.addEventListener("click", createRoom);
 
-function sendMessage(message) {
-    dataChannel.send(message);
-}
+joinBtn.addEventListener("click", () => {
+    const roomId = prompt("Enter Room ID:");
+    if (roomId) joinRoom(roomId);
+});
