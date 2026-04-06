@@ -23,9 +23,20 @@ const pc = new RTCPeerConnection(servers);
 let dataChannel = null;
 
 // Grab UI elements
-const createBtn = document.getElementById("create-room");
-const joinBtn = document.getElementById("join-room");
+const createBtn = document.getElementById("createRoom");
+const joinBtn = document.getElementById("joinRoom");
+const roomDisplay = document.getElementById("roomDisplay");
+const chatbox = document.getElementById("chatbox");
+const messageInput = document.getElementById("messageInput");
+const sendButton = document.getElementById("sendButton");
 
+// Helper function to show messages on screen
+function logMessage(text, sender) {
+    const msgDiv = document.createElement("div");
+    msgDiv.textContent = `${sender}: ${text}`;
+    chatbox.appendChild(msgDiv);
+    chatbox.scrollTop = chatbox.scrollHeight; // Auto-scroll
+}
 
 // 4. Handle Incoming Data Channel Messages
 function setupDataChannel(channel) {
@@ -54,8 +65,7 @@ async function createRoom() {
 
     // Create a room in Firebase
     const roomRef = await addDoc(collection(db, "rooms"), {});
-    // roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> (Share this with your friend!)`;
-    console.log(`Room created with ID: ${roomRef.id}`);
+    roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> (Share this with your friend!)`;
     
     // Save Caller's ICE Candidates to Firebase
     pc.onicecandidate = (event) => {
@@ -105,8 +115,7 @@ async function joinRoom(roomId) {
     }
     
     const data = roomSnapshot.data();
-    console.log(`Joining room with ID: ${roomId}`);
-    // roomDisplay.innerHTML = `Room ID: <b>${roomId}</b>`;
+    roomDisplay.innerHTML = `Room ID: <b>${roomId}</b>`;
 
     // Listen for the incoming Data Channel
     pc.ondatachannel = (event) => {
@@ -140,7 +149,9 @@ async function joinRoom(roomId) {
     });
 }
 
-
+// =======================================================
+// EVENT LISTENERS
+// =======================================================
 createBtn.addEventListener("click", createRoom);
 
 joinBtn.addEventListener("click", () => {
@@ -148,11 +159,11 @@ joinBtn.addEventListener("click", () => {
     if (roomId) joinRoom(roomId);
 });
 
-function sendMessage(message){
-    if (dataChannel && dataChannel.readyState === "open") {
-        dataChannel.send(message);
-        logMessage(message, "You");
-    } else {
-        alert("Connection not established yet!");
+sendButton.addEventListener("click", () => {
+    const msg = messageInput.value;
+    if (msg && dataChannel) {
+        dataChannel.send(msg);
+        logMessage(msg, "Me");
+        messageInput.value = "";
     }
-}
+});
