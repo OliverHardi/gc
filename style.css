@@ -1,0 +1,300 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+    min-height: 100vh;
+    /* background: linear-gradient(135deg, #1b2a4a, #3c6fd6); */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #f5f5f5;
+}
+
+/* Centered container for both screens */
+#signInScreen,
+#chatScreen {
+    background: rgba(10, 16, 30, 0.95);
+    background-image: url('images/malec.jpeg');
+    background-size: cover;
+    background-repeat: no-repeat;
+    /* filter: sepia(50%) brightness(0.8); */
+    border-radius: 16px;
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45);
+    padding: 24px 28px;
+    width: 95%;
+    height: 600px;
+    max-height: 90vh;
+    color: #f5f5f5;
+}
+
+/* Sign‑in screen */
+#signInScreen {
+    display: flex;
+    text-align: center;
+    flex-direction: column;    /* Stacks the title and button vertically */
+    justify-content: center;   /* Centers them vertically in the 600px box */
+    align-items: center;       /* Centers them horizontally */
+}
+
+#signInScreen h2 {
+    margin-bottom: 16px;
+    font-size: 1.7rem;
+    letter-spacing: 0.03em;
+}
+
+#signInBtn {
+    margin-top: 16px;
+    padding: 10px 18px;
+    font-size: 1rem;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+    background: #f5f5f5;
+    color: #1b2a4a;
+    font-weight: 600;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+    transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.15s;
+}
+
+#signInBtn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
+    background: #f3f3f3;
+}
+
+#signInBtn:active {
+    transform: translateY(0);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Chat screen layout */
+#chatScreen {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Room display at the top */
+#chatHeader {
+    display: flex;
+    justify-content: space-between; /* Pushes text left, button right */
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+#roomDisplay {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #e6e9f3;
+}
+
+/* Sign Out Button */
+#signOutBtn {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: transparent;
+    color: #f5f5f5;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.15s ease;
+    width: 100px;
+}
+
+#signOutBtn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* Chatbox area */
+#chatbox {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 260px;
+    max-height: 420px;
+    overflow-y: auto;
+    padding: 12px;
+    border-radius: 10px;
+    background: rgba(165, 168, 172, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(8px);
+}
+
+/* Example message styles (optional, in case you add classes later) */
+.message {
+    padding: 8px 14px;
+    border-radius: 14px;
+    max-width: 80%;       /* Prevents super long messages from touching the other side */
+    width: fit-content;   /* Hugs the text */
+    word-wrap: break-word; 
+    line-height: 1.4;
+}
+
+.message.other {
+    background: rgba(255, 255, 255, 0.1);
+    color: #f5f5f5;
+    align-self: flex-start;
+    border-bottom-left-radius: 2px; /* Classic chat bubble tail */
+}
+
+.message.me {
+    background: #3c6fd6;
+    color: #ffffff;
+    align-self: flex-end;
+    border-bottom-right-radius: 2px; /* Classic chat bubble tail */
+}
+
+.message.system {
+    background: transparent;
+    color: #c3c6ce;
+    font-size: 0.85rem;
+    align-self: center;
+    text-align: center;
+    font-style: italic;
+    padding: 4px;
+}
+
+/* Input row */
+#messageInput {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(5, 12, 35, 0.1);
+    backdrop-filter: blur(6px);
+    color: #f5f5f5;
+    outline: none;
+    font-size: 0.95rem;
+    margin-top: 4px;
+}
+
+#messageInput::placeholder {
+    color: #9ba3c4;
+}
+
+#messageInput:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Send button */
+#sendButton {
+    margin-top: 8px;
+    align-self: flex-end;
+    padding: 7px 16px;
+    font-size: 0.9rem;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+    background: #5e6e8e;
+    color: #f5f5f5;
+    font-weight: 600;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+    transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.15s;
+}
+
+#sendButton:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 5px 14px rgba(0, 0, 0, 0.55);
+    background: #f5f5f5;
+    color: #5e6e8e;
+}
+
+#sendButton:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 3px 9px rgba(0, 0, 0, 0.45);
+}
+
+#sendButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Hide the duplicate roomDisplay paragraph container */
+body > div:last-of-type {
+    display: none;
+}
+
+/* Scrollbar styling (WebKit browsers) */
+#chatbox::-webkit-scrollbar {
+    width: 6px;
+}
+#chatbox::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+}
+#chatbox::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+
+/* Small screens */
+@media (max-width: 480px) {
+    #signInScreen,
+    #chatScreen {
+        padding: 18px 16px;
+        border-radius: 12px;
+    }
+
+    #chatbox {
+        min-height: 220px;
+    }
+}
+
+
+#signInScreen,
+#chatScreen {
+    position: relative;
+    overflow: hidden;
+
+    background-image: url('images/malec.jpeg');
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+
+#signInScreen::before,
+#chatScreen::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        130deg,
+        rgba(60, 111, 214, 0.55),
+        rgba(141, 84, 196, 0.45),
+        rgba(14, 36, 71, 0.7)
+    );
+    mix-blend-mode: overlay;
+    opacity: 0.9;
+    animation: gradient-move 10s ease-in-out infinite alternate;
+    pointer-events: none;
+    z-index: 0;
+}
+
+#signInScreen > *,
+#chatScreen > * {
+    position: relative;
+    z-index: 1;
+}
+
+@keyframes gradient-move {
+    0% {
+        background-position: 0% 50%;
+        background-size: 200% 200%;
+    }
+    50% {
+        background-position: 100% 50%;
+        background-size: 220% 220%;
+    }
+    100% {
+        background-position: 0% 50%;
+        background-size: 200% 200%;
+    }
+}

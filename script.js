@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyAZVleqPUw4XD-Z6bWo0hdZk3WZV53KNCY",
@@ -43,39 +43,70 @@ async function signIn() {
 }
 
 async function getIceServers() {
-    try {
-        const response = await fetch("https://mhs-chat.metered.live/api/v1/turn/credentials?apiKey=60346c336ffff46e32cf32b5d08f206e1875");
-        if (!response.ok) throw new Error("Failed");
-        return await response.json();
-    } catch (e) {
-        console.warn("Could not fetch TURN credentials, falling back to STUN:", e);
-        return [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:stun1.l.google.com:19302" }
-        ];
-    }
+    // try {
+    //     const response = await fetch("https://mhs-chat.metered.live/api/v1/turn/credentials?apiKey=60346c336ffff46e32cf32b5d08f206e1875");
+    //     if (!response.ok) throw new Error("Failed");
+    //     return await response.json();
+    // } catch (e) {
+    //     console.warn("Could not fetch TURN credentials, falling back to STUN:", e);
+    //     return [
+    //         { urls: "stun:stun.l.google.com:19302" },
+    //         { urls: "stun:stun1.l.google.com:19302" }
+    //     ];
+    // }
+    return [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" }
+    ];
 }
 
 function logMessage(text, sender) {
     const msgDiv = document.createElement("div");
-    msgDiv.textContent = `${sender}: ${text}`;
+    // msgDiv.textContent = `${sender}: ${text}`;
+    msgDiv.classList.add("message");
+
+    if (sender === "System") {
+        // System logs (Centered, no bubble)
+        msgDiv.classList.add("system");
+        msgDiv.textContent = text;
+        
+    } else if (sender === currentUser.displayName) {
+        // Your messages (Right side, blue bubble)
+        msgDiv.classList.add("me");
+        // We usually don't put our own name in our own bubbles
+        msgDiv.textContent = text; 
+        
+    } else {
+        // Other people's messages (Left side, gray bubble)
+        msgDiv.classList.add("other");
+        // Keep their name visible so you know who is talking
+        msgDiv.textContent = `${sender}: ${text}`; 
+    }
+
     chatbox.appendChild(msgDiv);
     chatbox.scrollTop = chatbox.scrollHeight;
 }
 
 function createPeerConnection(peerId) {
     const pc = new RTCPeerConnection({ iceServers });
+    const localCandidates = []; // Array to hold candidates locally
 
     pc.onicecandidate = (event) => {
         if (event.candidate) {
-            addDoc(collection(db, "rooms", roomId, "candidates", peerId, myId), event.candidate.toJSON());
+            // Push to local array instead of writing to Firestore
+            localCandidates.push(event.candidate.toJSON());
+        } else if (localCandidates.length > 0) {
+            // event.candidate is null, meaning gathering is done.
+            // Write the whole array in ONE single database operation.
+            setDoc(doc(db, "rooms", roomId, "candidates", peerId, "incoming", myId), {
+                candidates: localCandidates
+            });
         }
     };
 
     pc.oniceconnectionstatechange = () => {
         console.log(`ICE state with ${peerId}:`, pc.iceConnectionState);
         if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
-            // logMessage("A peer disconnected.", "System");
             logMessage(`${peerNames[peerId] || peerId.slice(0, 6)} left the chat.`, "System");
             delete peers[peerId];
             delete dataChannels[peerId];
@@ -94,7 +125,8 @@ function setupDataChannel(channel, peerId) {
     dataChannels[peerId] = channel;
 
     channel.onopen = () => {
-        logMessage("A peer joined.", "System");
+        // logMessage("A peer joined.", "System");
+        logMessage(`${peerNames[peerId] || peerId.slice(0, 6)} joined the chat.`, "System");
         messageInput.disabled = false;
         sendButton.disabled = false;
     };
@@ -121,19 +153,38 @@ async function connectToPeer(peerId) {
         sdp: offer.sdp
     });
 
-    onSnapshot(doc(db, "rooms", roomId, "answers", myId, "incoming", peerId), (snapshot) => {
+    const unsubAnswer = onSnapshot(doc(db, "rooms", roomId, "answers", myId, "incoming", peerId), (snapshot) => {
         if (snapshot.exists() && !pc.remoteDescription) {
             pc.setRemoteDescription(new RTCSessionDescription(snapshot.data()));
         }
     });
 
-    onSnapshot(collection(db, "rooms", roomId, "candidates", myId, peerId), (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-            if (change.type === "added") {
-                pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+    const unsubCandidates = onSnapshot(doc(db, "rooms", roomId, "candidates", myId, "incoming", peerId), (snapshot) => {
+        if (snapshot.exists()) {
+            const data = snapshot.data();
+            if (data.candidates && Array.isArray(data.candidates)) {
+                data.candidates.forEach((candidate) => {
+                    pc.addIceCandidate(new RTCIceCandidate(candidate));
+                });
             }
-        });
+        }
     });
+
+    pc.addEventListener('connectionstatechange', async () => {
+        if (pc.connectionState === 'connected') {
+            unsubAnswer();      // Stop listening to DB
+            unsubCandidates();  // Stop listening to DB
+            try {
+                // Delete the documents WE created for them
+                await deleteDoc(doc(db, "rooms", roomId, "offers", peerId, "incoming", myId));
+                await deleteDoc(doc(db, "rooms", roomId, "candidates", peerId, "incoming", myId));
+                console.log("Cleaned up my offer and candidates!");
+            } catch (e) {
+                console.error("Cleanup failed:", e);
+            }
+        }
+    });
+
 }
 
 async function answerPeer(peerId, offerData) {
@@ -148,18 +199,51 @@ async function answerPeer(peerId, offerData) {
         sdp: answer.sdp
     });
 
-    onSnapshot(collection(db, "rooms", roomId, "candidates", myId, peerId), (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-            if (change.type === "added") {
-                pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+    const unsubCandidates = onSnapshot(doc(db, "rooms", roomId, "candidates", myId, "incoming", peerId), (snapshot) => {
+        if (snapshot.exists()) {
+            const data = snapshot.data();
+            if (data.candidates && Array.isArray(data.candidates)) {
+                data.candidates.forEach((candidate) => {
+                    pc.addIceCandidate(new RTCIceCandidate(candidate));
+                });
             }
-        });
+        }
+    });
+
+    // 2. ADD THE CLEANUP LISTENER
+    pc.addEventListener('connectionstatechange', async () => {
+        if (pc.connectionState === 'connected') {
+            unsubCandidates(); // Stop listening to DB
+            try {
+                // Delete the documents WE created for them
+                await deleteDoc(doc(db, "rooms", roomId, "answers", peerId, "incoming", myId));
+                await deleteDoc(doc(db, "rooms", roomId, "candidates", peerId, "incoming", myId));
+                console.log("Cleaned up my answer and candidates!");
+            } catch (e) {
+                console.error("Cleanup failed:", e);
+            }
+        }
     });
 }
 
 async function enterRoom() {
     roomId = ROOM_ID;
     iceServers = await getIceServers();
+
+    try {
+        const stuckOffers = await getDocs(collection(db, "rooms", roomId, "offers", myId, "incoming"));
+        stuckOffers.forEach(snap => deleteDoc(snap.ref));
+
+        const stuckAnswers = await getDocs(collection(db, "rooms", roomId, "answers", myId, "incoming"));
+        stuckAnswers.forEach(snap => deleteDoc(snap.ref));
+
+        const stuckCandidates = await getDocs(collection(db, "rooms", roomId, "candidates", myId, "incoming"));
+        stuckCandidates.forEach(snap => deleteDoc(snap.ref));
+        
+        console.log("Swept up old ghost connections!");
+    } catch (e) {
+        console.warn("Cleanup sweep failed, moving on:", e);
+    }
 
     const myJoinTime = Date.now();
     roomDisplay.innerHTML = `Signed in as <b>${currentUser.displayName}</b>`;
@@ -205,7 +289,7 @@ async function enterRoom() {
         });
     });
 
-    logMessage("Waiting for others to join...", "System");
+    logMessage("Waiting for other users...", "System");
 }
 
 function broadcast(msg) {
@@ -245,6 +329,24 @@ function showSignIn() {
 function showChat() {
     document.getElementById("signInScreen").style.display = "none";
     document.getElementById("chatScreen").style.display = "flex";
+    document.getElementById("signOutBtn").style.display = "block";
 }
 
 document.getElementById("signInBtn").addEventListener("click", signIn);
+
+
+document.getElementById("signOutBtn").addEventListener("click", async () => {
+    // 1. Delete yourself from the database so others see you leave
+    if (roomId && myId) {
+        try {
+            await deleteDoc(doc(db, "rooms", roomId, "members", myId));
+        } catch (e) {
+            console.error("Failed to remove member doc:", e);
+        }
+    }
+
+    // 2. Tell Firebase to sign the user out
+    await signOut(auth);
+    // reload window
+    window.location.reload();
+});
