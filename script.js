@@ -43,21 +43,21 @@ async function signIn() {
 }
 
 async function getIceServers() {
-    // try {
-    //     const response = await fetch("https://mhs-chat.metered.live/api/v1/turn/credentials?apiKey=60346c336ffff46e32cf32b5d08f206e1875");
-    //     if (!response.ok) throw new Error("Failed");
-    //     return await response.json();
-    // } catch (e) {
-    //     console.warn("Could not fetch TURN credentials, falling back to STUN:", e);
-    //     return [
-    //         { urls: "stun:stun.l.google.com:19302" },
-    //         { urls: "stun:stun1.l.google.com:19302" }
-    //     ];
-    // }
-    return [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" }
-    ];
+    try {
+        const response = await fetch("https://mhs-chat.metered.live/api/v1/turn/credentials?apiKey=60346c336ffff46e32cf32b5d08f206e1875");
+        if (!response.ok) throw new Error("Failed");
+        return await response.json();
+    } catch (e) {
+        console.warn("Could not fetch TURN credentials, falling back to STUN:", e);
+        return [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" }
+        ];
+    }
+    // return [
+    //     { urls: "stun:stun.l.google.com:19302" },
+    //     { urls: "stun:stun1.l.google.com:19302" }
+    // ];
 }
 
 function logMessage(text, sender) {
