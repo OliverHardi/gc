@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyAZVleqPUw4XD-Z6bWo0hdZk3WZV53KNCY",
@@ -14,8 +14,12 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-let pc = null;
-let dataChannel = null;
+const myId = crypto.randomUUID();
+let roomId = null;
+let iceServers = null;
+
+const peers = {};
+const dataChannels = {};
 
 const createBtn = document.getElementById("createRoom");
 const joinBtn = document.getElementById("joinRoom");
@@ -26,19 +30,7 @@ const sendButton = document.getElementById("sendButton");
 
 async function getIceServers() {
     const response = await fetch("https://mhs-chat.metered.live/api/v1/turn/credentials?apiKey=60346c336ffff46e32cf32b5d08f206e1875");
-
     return await response.json();
-}
-
-function createPeerConnection(iceServers) {
-    pc = new RTCPeerConnection({ iceServers });
-
-    pc.oniceconnectionstatechange = () => {
-        console.log("ICE Connection State:", pc.iceConnectionState);
-        if (pc.iceConnectionState === "failed") {
-            console.error("Connection failed.");
-        }
-    };
 }
 
 function logMessage(text, sender) {
@@ -48,126 +40,169 @@ function logMessage(text, sender) {
     chatbox.scrollTop = chatbox.scrollHeight;
 }
 
-function setupDataChannel(channel) {
-    dataChannel = channel;
+function createPeerConnection(peerId) {
+    const pc = new RTCPeerConnection({ iceServers });
 
-    dataChannel.onopen = () => {
-        logMessage("Connected! You can now chat.", "System");
+    pc.onicecandidate = (event) => {
+        if (event.candidate) {
+            addDoc(collection(db, "rooms", roomId, "candidates", peerId, myId), event.candidate.toJSON());
+        }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+        console.log(`ICE state with ${peerId}:`, pc.iceConnectionState);
+        if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
+            logMessage(`A peer disconnected.`, "System");
+            delete peers[peerId];
+            delete dataChannels[peerId];
+        }
+    };
+
+    pc.ondatachannel = (event) => {
+        setupDataChannel(event.channel, peerId);
+    };
+
+    peers[peerId] = pc;
+    return pc;
+}
+
+function setupDataChannel(channel, peerId) {
+    dataChannels[peerId] = channel;
+
+    channel.onopen = () => {
+        logMessage(`Peer joined.`, "System");
         messageInput.disabled = false;
         sendButton.disabled = false;
     };
 
-    dataChannel.onmessage = (event) => {
-        logMessage(event.data, "Peer");
+    channel.onclose = () => {
+        delete dataChannels[peerId];
+    };
+
+    channel.onmessage = (event) => {
+        logMessage(event.data, peerId.slice(0, 6));
     };
 }
 
-async function createRoom() {
-    createBtn.disabled = true;
-    joinBtn.disabled = true;
-
-    const iceServers = await getIceServers();
-    createPeerConnection(iceServers);
-
-    setupDataChannel(pc.createDataChannel("chat"));
-
-    const customName = prompt("Enter a room name (e.g., MyChat):");
-    if (!customName) return;
-    const roomRef = doc(db, "rooms", customName);
-
-    roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> (Setting up...)`;
-
-    pc.onicecandidate = (event) => {
-        if (event.candidate) {
-            addDoc(collection(roomRef, "callerCandidates"), event.candidate.toJSON());
-        }
-    };
+async function connectToPeer(peerId) {
+    const pc = createPeerConnection(peerId);
+    const channel = pc.createDataChannel("chat");
+    setupDataChannel(channel, peerId);
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    // Write offer immediately, let candidates trickle via onicecandidate
-    await setDoc(roomRef, {
-        offer: { type: offer.type, sdp: offer.sdp }
+    // Write offer TO peerId FROM myId
+    await setDoc(doc(db, "rooms", roomId, "offers", peerId, "incoming", myId), {
+        type: offer.type,
+        sdp: offer.sdp
     });
 
-    roomDisplay.innerHTML = `Room ID: <b>${roomRef.id}</b> - Ready! Share with your friend.`;
-
-    onSnapshot(roomRef, (snapshot) => {
-        const data = snapshot.data();
-        if (!pc.remoteDescription && data && data.answer) {
-            pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+    // Watch for answer FROM peerId TO myId
+    onSnapshot(doc(db, "rooms", roomId, "answers", myId, "incoming", peerId), (snapshot) => {
+        if (snapshot.exists() && !pc.remoteDescription) {
+            pc.setRemoteDescription(new RTCSessionDescription(snapshot.data()));
         }
     });
 
-    onSnapshot(collection(roomRef, "calleeCandidates"), (snapshot) => {
+    // Watch for ICE candidates FROM peerId TO myId
+    onSnapshot(collection(db, "rooms", roomId, "candidates", myId, peerId), (snapshot) => {
         snapshot.docChanges().forEach((change) => {
-            if (change.type === 'added') {
+            if (change.type === "added") {
                 pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
             }
         });
     });
 }
 
-async function joinRoom(roomId) {
-    createBtn.disabled = true;
-    joinBtn.disabled = true;
+async function answerPeer(peerId, offerData) {
+    const pc = createPeerConnection(peerId);
 
-    const iceServers = await getIceServers();
-    createPeerConnection(iceServers);
-
-    const roomRef = doc(db, "rooms", roomId);
-    const roomSnapshot = await getDoc(roomRef);
-
-    if (!roomSnapshot.exists()) {
-        alert("Room not found!");
-        return;
-    }
-
-    const data = roomSnapshot.data();
-    roomDisplay.innerHTML = `Room ID: <b>${roomId}</b>`;
-
-    pc.ondatachannel = (event) => {
-        setupDataChannel(event.channel);
-    };
-
-    pc.onicecandidate = (event) => {
-        if (event.candidate) {
-            addDoc(collection(roomRef, "calleeCandidates"), event.candidate.toJSON());
-        }
-    };
-
-    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-
+    await pc.setRemoteDescription(new RTCSessionDescription(offerData));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
-    // Write answer immediately, let candidates trickle
-    await updateDoc(roomRef, {
-        answer: { type: answer.type, sdp: answer.sdp }
+    // Write answer TO peerId FROM myId
+    await setDoc(doc(db, "rooms", roomId, "answers", peerId, "incoming", myId), {
+        type: answer.type,
+        sdp: answer.sdp
     });
 
-    onSnapshot(collection(roomRef, "callerCandidates"), (snapshot) => {
+    // Watch for ICE candidates FROM peerId TO myId
+    onSnapshot(collection(db, "rooms", roomId, "candidates", myId, peerId), (snapshot) => {
         snapshot.docChanges().forEach((change) => {
-            if (change.type === 'added') {
+            if (change.type === "added") {
                 pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
             }
         });
     });
 }
 
-createBtn.addEventListener("click", createRoom);
+async function enterRoom(name) {
+    roomId = name;
+    iceServers = await getIceServers();
 
-joinBtn.addEventListener("click", () => {
-    const roomId = prompt("Enter Room ID:");
-    if (roomId) joinRoom(roomId);
+    roomDisplay.innerHTML = `Room: <b>${roomId}</b> — You are <b>${myId.slice(0, 6)}</b>`;
+
+    // Register yourself
+    await setDoc(doc(db, "rooms", roomId, "members", myId), { joined: Date.now() });
+
+    window.addEventListener("beforeunload", () => {
+        deleteDoc(doc(db, "rooms", roomId, "members", myId));
+    });
+
+    // Watch members — when a new peer appears, the higher ID initiates
+    onSnapshot(collection(db, "rooms", roomId, "members"), (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+            if (change.type !== "added") return;
+            const peerId = change.doc.id;
+            if (peerId === myId) return;
+            if (!peers[peerId] && myId > peerId) {
+                connectToPeer(peerId);
+            }
+        });
+    });
+
+    // Watch for offers addressed TO me
+    onSnapshot(collection(db, "rooms", roomId, "offers", myId, "incoming"), (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+            if (change.type !== "added") return;
+            const peerId = change.doc.id;
+            if (!peers[peerId]) {
+                answerPeer(peerId, change.doc.data());
+            }
+        });
+    });
+}
+
+function broadcast(msg) {
+    Object.values(dataChannels).forEach((channel) => {
+        if (channel.readyState === "open") channel.send(msg);
+    });
+}
+
+createBtn.addEventListener("click", async () => {
+    createBtn.disabled = true;
+    joinBtn.disabled = true;
+    const name = prompt("Enter a room name:");
+    if (name) await enterRoom(name);
+});
+
+joinBtn.addEventListener("click", async () => {
+    createBtn.disabled = true;
+    joinBtn.disabled = true;
+    const name = prompt("Enter room name to join:");
+    if (name) await enterRoom(name);
 });
 
 sendButton.addEventListener("click", () => {
-    const msg = messageInput.value;
-    if (msg && dataChannel) {
-        dataChannel.send(msg);
-        logMessage(msg, "Me");
-        messageInput.value = "";
-    }
+    const msg = messageInput.value.trim();
+    if (!msg) return;
+    broadcast(msg);
+    logMessage(msg, "Me");
+    messageInput.value = "";
+});
+
+messageInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendButton.click();
 });
