@@ -278,6 +278,17 @@ body > div:last-of-type {
     z-index: 0;
 }
 
+#signInScreen::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    backdrop-filter: blur(10px);  /* adjust strength here */
+    -webkit-backdrop-filter: blur(10px);
+    pointer-events: none;
+    z-index: 0;
+}
+
+
 #signInScreen > *,
 #chatScreen > * {
     position: relative;
