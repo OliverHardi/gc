@@ -1,5 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyAZVleqPUw4XD-Z6bWo0hdZk3WZV53KNCY",
@@ -13,7 +14,12 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
 
+let currentUser = null; // will hold { uid, displayName, photoURL }
+const peerNames = {};
+
+const ROOM_ID = "main";
 const myId = crypto.randomUUID();
 let roomId = null;
 let iceServers = null;
@@ -21,16 +27,33 @@ let iceServers = null;
 const peers = {};
 const dataChannels = {};
 
-const createBtn = document.getElementById("createRoom");
-const joinBtn = document.getElementById("joinRoom");
 const roomDisplay = document.getElementById("roomDisplay");
 const chatbox = document.getElementById("chatbox");
 const messageInput = document.getElementById("messageInput");
 const sendButton = document.getElementById("sendButton");
 
+async function signIn() {
+    const provider = new GoogleAuthProvider();
+    try {
+        const result = await signInWithPopup(auth, provider);
+        return result.user;
+    } catch (e) {
+        console.error("Sign in failed:", e);
+    }
+}
+
 async function getIceServers() {
-    const response = await fetch("https://mhs-chat.metered.live/api/v1/turn/credentials?apiKey=60346c336ffff46e32cf32b5d08f206e1875");
-    return await response.json();
+    try {
+        const response = await fetch("https://mhs-chat.metered.live/api/v1/turn/credentials?apiKey=60346c336ffff46e32cf32b5d08f206e1875");
+        if (!response.ok) throw new Error("Failed");
+        return await response.json();
+    } catch (e) {
+        console.warn("Could not fetch TURN credentials, falling back to STUN:", e);
+        return [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" }
+        ];
+    }
 }
 
 function logMessage(text, sender) {
@@ -52,7 +75,8 @@ function createPeerConnection(peerId) {
     pc.oniceconnectionstatechange = () => {
         console.log(`ICE state with ${peerId}:`, pc.iceConnectionState);
         if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
-            logMessage(`A peer disconnected.`, "System");
+            // logMessage("A peer disconnected.", "System");
+            logMessage(`${peerNames[peerId] || peerId.slice(0, 6)} left the chat.`, "System");
             delete peers[peerId];
             delete dataChannels[peerId];
         }
@@ -70,7 +94,7 @@ function setupDataChannel(channel, peerId) {
     dataChannels[peerId] = channel;
 
     channel.onopen = () => {
-        logMessage(`Peer joined.`, "System");
+        logMessage("A peer joined.", "System");
         messageInput.disabled = false;
         sendButton.disabled = false;
     };
@@ -80,7 +104,7 @@ function setupDataChannel(channel, peerId) {
     };
 
     channel.onmessage = (event) => {
-        logMessage(event.data, peerId.slice(0, 6));
+        logMessage(event.data, peerNames[peerId] || peerId.slice(0, 6));
     };
 }
 
@@ -92,20 +116,17 @@ async function connectToPeer(peerId) {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    // Write offer TO peerId FROM myId
     await setDoc(doc(db, "rooms", roomId, "offers", peerId, "incoming", myId), {
         type: offer.type,
         sdp: offer.sdp
     });
 
-    // Watch for answer FROM peerId TO myId
     onSnapshot(doc(db, "rooms", roomId, "answers", myId, "incoming", peerId), (snapshot) => {
         if (snapshot.exists() && !pc.remoteDescription) {
             pc.setRemoteDescription(new RTCSessionDescription(snapshot.data()));
         }
     });
 
-    // Watch for ICE candidates FROM peerId TO myId
     onSnapshot(collection(db, "rooms", roomId, "candidates", myId, peerId), (snapshot) => {
         snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
@@ -122,13 +143,11 @@ async function answerPeer(peerId, offerData) {
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
-    // Write answer TO peerId FROM myId
     await setDoc(doc(db, "rooms", roomId, "answers", peerId, "incoming", myId), {
         type: answer.type,
         sdp: answer.sdp
     });
 
-    // Watch for ICE candidates FROM peerId TO myId
     onSnapshot(collection(db, "rooms", roomId, "candidates", myId, peerId), (snapshot) => {
         snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
@@ -138,32 +157,44 @@ async function answerPeer(peerId, offerData) {
     });
 }
 
-async function enterRoom(name) {
-    roomId = name;
+async function enterRoom() {
+    roomId = ROOM_ID;
     iceServers = await getIceServers();
 
-    roomDisplay.innerHTML = `Room: <b>${roomId}</b> — You are <b>${myId.slice(0, 6)}</b>`;
+    const myJoinTime = Date.now();
+    roomDisplay.innerHTML = `Signed in as <b>${currentUser.displayName}</b>`;
 
-    // Register yourself
-    await setDoc(doc(db, "rooms", roomId, "members", myId), { joined: Date.now() });
+    await setDoc(doc(db, "rooms", roomId, "members", myId), {
+        joined: myJoinTime,
+        name: currentUser.displayName,
+        photoURL: currentUser.photoURL
+    });
 
     window.addEventListener("beforeunload", () => {
         deleteDoc(doc(db, "rooms", roomId, "members", myId));
     });
 
-    // Watch members — when a new peer appears, the higher ID initiates
+    // Watch members — offer to anyone who was already here when we joined
     onSnapshot(collection(db, "rooms", roomId, "members"), (snapshot) => {
         snapshot.docChanges().forEach((change) => {
             if (change.type !== "added") return;
             const peerId = change.doc.id;
             if (peerId === myId) return;
-            if (!peers[peerId] && myId > peerId) {
+            if (peers[peerId]) return;
+
+            const data = change.doc.data();
+
+            peerNames[peerId] = data.name;
+            
+
+            const peerJoinTime = change.doc.data().joined;
+            if (peerJoinTime < myJoinTime) {
                 connectToPeer(peerId);
             }
         });
     });
 
-    // Watch for offers addressed TO me
+    // Watch for offers addressed to me
     onSnapshot(collection(db, "rooms", roomId, "offers", myId, "incoming"), (snapshot) => {
         snapshot.docChanges().forEach((change) => {
             if (change.type !== "added") return;
@@ -173,6 +204,8 @@ async function enterRoom(name) {
             }
         });
     });
+
+    logMessage("Waiting for others to join...", "System");
 }
 
 function broadcast(msg) {
@@ -181,28 +214,37 @@ function broadcast(msg) {
     });
 }
 
-createBtn.addEventListener("click", async () => {
-    createBtn.disabled = true;
-    joinBtn.disabled = true;
-    const name = prompt("Enter a room name:");
-    if (name) await enterRoom(name);
-});
-
-joinBtn.addEventListener("click", async () => {
-    createBtn.disabled = true;
-    joinBtn.disabled = true;
-    const name = prompt("Enter room name to join:");
-    if (name) await enterRoom(name);
-});
-
 sendButton.addEventListener("click", () => {
     const msg = messageInput.value.trim();
     if (!msg) return;
     broadcast(msg);
-    logMessage(msg, "Me");
+    logMessage(msg, currentUser.displayName);
     messageInput.value = "";
 });
 
 messageInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendButton.click();
 });
+
+// join room after sign in
+onAuthStateChanged(auth, async (user) => {
+    if (user) {
+        currentUser = user;
+        showChat();
+        await enterRoom();
+    } else {
+        showSignIn();
+    }
+});
+
+function showSignIn() {
+    document.getElementById("signInScreen").style.display = "flex";
+    document.getElementById("chatScreen").style.display = "none";
+}
+
+function showChat() {
+    document.getElementById("signInScreen").style.display = "none";
+    document.getElementById("chatScreen").style.display = "flex";
+}
+
+document.getElementById("signInBtn").addEventListener("click", signIn);

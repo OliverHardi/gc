@@ -10,16 +10,26 @@
     </style>
 </head>
 <body>
+
+    <div id="signInScreen">
+        <h2>Welcome to Chat</h2>
+        <button id="signInBtn">Sign in with Google</button>
+    </div>
+
+    <div id="chatScreen" style="display:none">
+        <div id="roomDisplay"></div>
+        <div id="chatbox"></div>
+        <input id="messageInput" disabled placeholder="Type a message..." />
+        <button id="sendButton" disabled>Send</button>
+    </div>
     
     <div>
-        <button id="createRoom">Create Room</button>
-        <button id="joinRoom">Join Room</button>
-        <p id="roomDisplay">Room ID: <i>Not connected</i></p>
+        <p id="roomDisplay">Loading...</p>
     </div>
 
     <hr>
 
-    <div id="chatbox"></div>
+    <!-- <div id="chatbox"></div> -->
     <input type="text" id="messageInput" placeholder="Type a message..." disabled>
     <button id="sendButton" disabled>Send</button>
 
