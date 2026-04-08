@@ -28,7 +28,7 @@ const currentUser = {
 
 const peerNames = {};
 
-const ROOM_ID = "main";
+const ROOM_ID = "camping";
 const myId = crypto.randomUUID();
 let roomId = null;
 let iceServers = null;
@@ -366,22 +366,8 @@ function showChat() {
     if (signInScreen) signInScreen.style.display = "none";
     
     document.getElementById("chatScreen").style.display = "flex";
-    document.getElementById("signOutBtn").style.display = "block";
 }
 
-document.getElementById("signOutBtn").addEventListener("click", async () => {
-    // 1. Delete yourself from the database so others see you leave
-    if (roomId && myId) {
-        try {
-            await deleteDoc(doc(db, "rooms", roomId, "members", myId));
-        } catch (e) {
-            console.error("Failed to remove member doc:", e);
-        }
-    }
-
-    // 2. Reload window to clear memory and start fresh
-    window.location.reload();
-});
 
 // Kick off the application
 showChat();
