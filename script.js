@@ -1,6 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyAZVleqPUw4XD-Z6bWo0hdZk3WZV53KNCY",
@@ -14,9 +13,19 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const auth = getAuth(app);
 
-let currentUser = null; // will hold { uid, displayName, photoURL }
+// Prompt for name right away, fallback to Anonymous if left blank
+let chosenName = prompt("Enter your display name:");
+if (!chosenName || chosenName.trim() === "") {
+    chosenName = "Anonymous";
+}
+
+const currentUser = {
+    uid: crypto.randomUUID(),
+    displayName: chosenName.trim(),
+    photoURL: "https://www.gravatar.com/avatar/"
+};
+
 const peerNames = {};
 
 const ROOM_ID = "main";
@@ -31,16 +40,6 @@ const roomDisplay = document.getElementById("roomDisplay");
 const chatbox = document.getElementById("chatbox");
 const messageInput = document.getElementById("messageInput");
 const sendButton = document.getElementById("sendButton");
-
-async function signIn() {
-    const provider = new GoogleAuthProvider();
-    try {
-        const result = await signInWithPopup(auth, provider);
-        return result.user;
-    } catch (e) {
-        console.error("Sign in failed:", e);
-    }
-}
 
 async function getIceServers() {
     const iceServers = [
@@ -65,24 +64,16 @@ async function getIceServers() {
 
 function logMessage(text, sender) {
     const msgDiv = document.createElement("div");
-    // msgDiv.textContent = `${sender}: ${text}`;
     msgDiv.classList.add("message");
 
     if (sender === "System") {
-        // System logs (Centered, no bubble)
         msgDiv.classList.add("system");
         msgDiv.textContent = text;
-        
     } else if (sender === currentUser.displayName) {
-        // Your messages (Right side, blue bubble)
         msgDiv.classList.add("me");
-        // We usually don't put our own name in our own bubbles
         msgDiv.textContent = text; 
-        
     } else {
-        // Other people's messages (Left side, gray bubble)
         msgDiv.classList.add("other");
-        // Keep their name visible so you know who is talking
         msgDiv.textContent = `${sender}: ${text}`; 
     }
 
@@ -92,15 +83,17 @@ function logMessage(text, sender) {
 
 function createPeerConnection(peerId) {
     const pc = new RTCPeerConnection({ iceServers });
-    const localCandidates = []; // Array to hold candidates locally
+    
+    // Variables for batching ICE candidates
+    let candidateBatch = []; 
+    let batchTimeout = null;
 
     const name = peerNames[peerId] || peerId.slice(0, 6);
-    // logging
+    
     pc.onconnectionstatechange = () => {
         logMessage(`Connection with ${name}: ${pc.connectionState}`, "System");
     };
 
-    // Track ICE gathering (Looking for a network path)
     pc.onicegatheringstatechange = () => {
         console.log(`ICE Gathering (${name}): ${pc.iceGatheringState}`);
         if (pc.iceGatheringState === "gathering") {
@@ -110,14 +103,32 @@ function createPeerConnection(peerId) {
 
     pc.onicecandidate = (event) => {
         if (event.candidate) {
-            // Push to local array instead of writing to Firestore
-            localCandidates.push(event.candidate.toJSON());
-        } else if (localCandidates.length > 0) {
-            // event.candidate is null, meaning gathering is done.
-            // Write the whole array in ONE single database operation.
-            setDoc(doc(db, "rooms", roomId, "candidates", peerId, "incoming", myId), {
-                candidates: localCandidates
-            });
+            candidateBatch.push(event.candidate.toJSON());
+
+            if (!batchTimeout) {
+                batchTimeout = setTimeout(() => {
+                    setDoc(
+                        doc(db, "rooms", roomId, "candidates", peerId, "incoming", myId), 
+                        { candidates: arrayUnion(...candidateBatch) }, 
+                        { merge: true }
+                    );
+                    candidateBatch = [];
+                    batchTimeout = null;
+                }, 2000); // Send batches every 2000ms
+            }
+        } else {
+            // Gathering is complete. If there are any candidates left in the batch, send them now.
+            if (candidateBatch.length > 0) {
+                clearTimeout(batchTimeout);
+                setDoc(
+                    doc(db, "rooms", roomId, "candidates", peerId, "incoming", myId), 
+                    { candidates: arrayUnion(...candidateBatch) }, 
+                    { merge: true }
+                );
+                candidateBatch = [];
+                batchTimeout = null;
+            }
+            console.log(`Finished gathering all ICE candidates for ${name}.`);
         }
     };
 
@@ -142,7 +153,6 @@ function setupDataChannel(channel, peerId) {
     dataChannels[peerId] = channel;
 
     channel.onopen = () => {
-        // logMessage("A peer joined.", "System");
         logMessage(`${peerNames[peerId] || peerId.slice(0, 6)} joined the chat.`, "System");
         messageInput.disabled = false;
         sendButton.disabled = false;
@@ -189,10 +199,9 @@ async function connectToPeer(peerId) {
 
     pc.addEventListener('connectionstatechange', async () => {
         if (pc.connectionState === 'connected') {
-            unsubAnswer();      // Stop listening to DB
-            unsubCandidates();  // Stop listening to DB
+            unsubAnswer();      
+            unsubCandidates();  
             try {
-                // Delete the documents WE created for them
                 await deleteDoc(doc(db, "rooms", roomId, "offers", peerId, "incoming", myId));
                 await deleteDoc(doc(db, "rooms", roomId, "candidates", peerId, "incoming", myId));
                 console.log("Cleaned up my offer and candidates!");
@@ -201,7 +210,6 @@ async function connectToPeer(peerId) {
             }
         }
     });
-
 }
 
 async function answerPeer(peerId, offerData) {
@@ -227,12 +235,10 @@ async function answerPeer(peerId, offerData) {
         }
     });
 
-    // 2. ADD THE CLEANUP LISTENER
     pc.addEventListener('connectionstatechange', async () => {
         if (pc.connectionState === 'connected') {
-            unsubCandidates(); // Stop listening to DB
+            unsubCandidates(); 
             try {
-                // Delete the documents WE created for them
                 await deleteDoc(doc(db, "rooms", roomId, "answers", peerId, "incoming", myId));
                 await deleteDoc(doc(db, "rooms", roomId, "candidates", peerId, "incoming", myId));
                 console.log("Cleaned up my answer and candidates!");
@@ -247,22 +253,6 @@ async function enterRoom() {
     roomId = ROOM_ID;
     iceServers = await getIceServers();
 
-    /*
-    try {
-        const stuckOffers = await getDocs(collection(db, "rooms", roomId, "offers", myId, "incoming"));
-        stuckOffers.forEach(snap => deleteDoc(snap.ref));
-
-        const stuckAnswers = await getDocs(collection(db, "rooms", roomId, "answers", myId, "incoming"));
-        stuckAnswers.forEach(snap => deleteDoc(snap.ref));
-
-        const stuckCandidates = await getDocs(collection(db, "rooms", roomId, "candidates", myId, "incoming"));
-        stuckCandidates.forEach(snap => deleteDoc(snap.ref));
-        
-        console.log("Swept up old ghost connections!");
-    } catch (e) {
-        console.warn("Cleanup sweep failed, moving on:", e);
-    }
-    */
     const myJoinTime = Date.now();
     roomDisplay.innerHTML = `Signed in as <b>${currentUser.displayName}</b>`;
 
@@ -276,7 +266,6 @@ async function enterRoom() {
         deleteDoc(doc(db, "rooms", roomId, "members", myId));
     });
 
-    // Watch members — offer to anyone who was already here when we joined
     onSnapshot(collection(db, "rooms", roomId, "members"), (snapshot) => {
         snapshot.docChanges().forEach((change) => {
             if (change.type !== "added") return;
@@ -285,9 +274,7 @@ async function enterRoom() {
             if (peers[peerId]) return;
 
             const data = change.doc.data();
-
             peerNames[peerId] = data.name;
-            
 
             const peerJoinTime = change.doc.data().joined;
             if (peerJoinTime < myJoinTime) {
@@ -296,7 +283,6 @@ async function enterRoom() {
         });
     });
 
-    // Watch for offers addressed to me
     onSnapshot(collection(db, "rooms", roomId, "offers", myId, "incoming"), (snapshot) => {
         snapshot.docChanges().forEach((change) => {
             if (change.type !== "added") return;
@@ -328,30 +314,13 @@ messageInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendButton.click();
 });
 
-// join room after sign in
-onAuthStateChanged(auth, async (user) => {
-    if (user) {
-        currentUser = user;
-        showChat();
-        await enterRoom();
-    } else {
-        showSignIn();
-    }
-});
-
-function showSignIn() {
-    document.getElementById("signInScreen").style.display = "flex";
-    document.getElementById("chatScreen").style.display = "none";
-}
-
 function showChat() {
-    document.getElementById("signInScreen").style.display = "none";
+    const signInScreen = document.getElementById("signInScreen");
+    if (signInScreen) signInScreen.style.display = "none";
+    
     document.getElementById("chatScreen").style.display = "flex";
     document.getElementById("signOutBtn").style.display = "block";
 }
-
-document.getElementById("signInBtn").addEventListener("click", signIn);
-
 
 document.getElementById("signOutBtn").addEventListener("click", async () => {
     // 1. Delete yourself from the database so others see you leave
@@ -363,8 +332,10 @@ document.getElementById("signOutBtn").addEventListener("click", async () => {
         }
     }
 
-    // 2. Tell Firebase to sign the user out
-    await signOut(auth);
-    // reload window
+    // 2. Reload window to clear memory and start fresh
     window.location.reload();
 });
+
+// Kick off the application
+showChat();
+await enterRoom();
