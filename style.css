@@ -255,9 +255,10 @@ body > div:last-of-type {
     position: relative;
     overflow: hidden;
 
-    background-image: url('images/malec.jpeg');
+    background-image: url('images/n0.jpeg');
     background-size: cover;
     background-repeat: no-repeat;
+    transition: background-image 2s ease-in-out;
 }
 
 #signInScreen::before,
@@ -324,4 +325,16 @@ body > div:last-of-type {
 #usernameInput:focus {
     border-color: #f5f5f5;
     box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+}
+
+#signInScreen::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    
+    /* This does the magic: blurs everything behind this layer */
+    backdrop-filter: blur(4px);
+    
+    z-index: 0; /* Keeps the blur behind your text/inputs */
+    pointer-events: none; /* Makes sure you can still click the buttons */
 }

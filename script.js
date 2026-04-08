@@ -394,3 +394,24 @@ usernameInput.addEventListener("keydown", (e) => {
         handleLogin();
     }
 });
+
+// --- BACKGROUND IMAGE CYCLER ---
+
+const totalImages = 11; 
+let currentImageIndex = 0;
+
+function cycleBackground() {
+    // Move to the next index, and loop back to 0 if we hit the limit
+    currentImageIndex = (currentImageIndex + 1) % totalImages;
+    
+    // Construct the new file path
+    // IMPORTANT: Make sure the extension (.jpeg, .jpg, .png) matches your actual files
+    const newImageUrl = `url('images/n${currentImageIndex}.jpeg')`; 
+
+    // Apply the new background to both screens
+    document.getElementById("signInScreen").style.backgroundImage = newImageUrl;
+    document.getElementById("chatScreen").style.backgroundImage = newImageUrl;
+}
+
+// Change the background every 5 seconds (5000 milliseconds)
+setInterval(cycleBackground, 8000);
