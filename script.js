@@ -15,14 +15,9 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 // Prompt for name right away, fallback to Anonymous if left blank
-let chosenName = prompt("Enter your display name:");
-if (!chosenName || chosenName.trim() === "") {
-    chosenName = "Anonymous";
-}
-
 const currentUser = {
     uid: crypto.randomUUID(),
-    displayName: chosenName.trim(),
+    displayName: "Anonymous", // We will overwrite this later
     photoURL: "https://www.gravatar.com/avatar/"
 };
 
@@ -369,6 +364,33 @@ function showChat() {
 }
 
 
-// Kick off the application
-showChat();
-await enterRoom();
+const signInScreen = document.getElementById("signInScreen");
+const chatScreen = document.getElementById("chatScreen");
+const usernameInput = document.getElementById("usernameInput");
+const signInBtn = document.getElementById("signInBtn");
+
+async function handleLogin() {
+    // 1. Get the typed name, fallback to Anonymous if blank
+    let typedName = usernameInput.value.trim();
+    if (typedName !== "") {
+        currentUser.displayName = typedName;
+    }
+
+    // 2. Hide the sign-in screen, show the chat screen
+    signInScreen.style.display = "none";
+    chatScreen.style.display = "flex";
+    document.getElementById("signOutBtn").style.display = "block";
+
+    // 3. NOW connect to the database and enter the room
+    await enterRoom();
+}
+
+// Trigger login when the button is clicked
+signInBtn.addEventListener("click", handleLogin);
+
+// Trigger login when the "Enter" key is pressed inside the input
+usernameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+        handleLogin();
+    }
+});
