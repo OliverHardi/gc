@@ -180,6 +180,32 @@ async function connectToPeer(peerId) {
         sdp: offer.sdp
     });
 
+    // 👻 THE GHOST HUNTER 👻
+    const ghostTimeout = setTimeout(async () => {
+        if (pc.connectionState !== 'connected') {
+            const ghostName = peerNames[peerId] || peerId.slice(0, 6);
+            logMessage(`Connection to ${ghostName} timed out. Removing ghost...`, "System");
+            
+            try {
+                // Delete their member doc
+                await deleteDoc(doc(db, "rooms", roomId, "members", peerId));
+                // Delete the offer WE created for them
+                await deleteDoc(doc(db, "rooms", roomId, "offers", peerId, "incoming", myId));
+                // NEW: Delete the candidates WE created for them
+                await deleteDoc(doc(db, "rooms", roomId, "candidates", peerId, "incoming", myId));
+            } catch (e) {
+                console.warn("Could not sweep ghost from DB:", e);
+            }
+
+            unsubAnswer();
+            unsubCandidates();
+            
+            pc.close();
+            delete peers[peerId];
+            delete dataChannels[peerId];
+        }
+    }, 10000); 
+
     const unsubAnswer = onSnapshot(doc(db, "rooms", roomId, "answers", myId, "incoming", peerId), (snapshot) => {
         if (snapshot.exists() && !pc.remoteDescription) {
             pc.setRemoteDescription(new RTCSessionDescription(snapshot.data()));
@@ -199,6 +225,7 @@ async function connectToPeer(peerId) {
 
     pc.addEventListener('connectionstatechange', async () => {
         if (pc.connectionState === 'connected') {
+            clearTimeout(ghostTimeout); 
             unsubAnswer();      
             unsubCandidates();  
             try {
@@ -224,6 +251,25 @@ async function answerPeer(peerId, offerData) {
         sdp: answer.sdp
     });
 
+    // 👻 CALLEE GHOST HUNTER 👻
+    // If the person who sent us the offer vanishes before connecting, clean up our answers!
+    const answerGhostTimeout = setTimeout(async () => {
+        if (pc.connectionState !== 'connected') {
+            try {
+                // Delete the answer and candidates WE created for them
+                await deleteDoc(doc(db, "rooms", roomId, "answers", peerId, "incoming", myId));
+                await deleteDoc(doc(db, "rooms", roomId, "candidates", peerId, "incoming", myId));
+            } catch (e) {
+                console.warn("Could not sweep dead answer from DB:", e);
+            }
+
+            unsubCandidates();
+            pc.close();
+            delete peers[peerId];
+            delete dataChannels[peerId];
+        }
+    }, 10000);
+
     const unsubCandidates = onSnapshot(doc(db, "rooms", roomId, "candidates", myId, "incoming", peerId), (snapshot) => {
         if (snapshot.exists()) {
             const data = snapshot.data();
@@ -237,6 +283,7 @@ async function answerPeer(peerId, offerData) {
 
     pc.addEventListener('connectionstatechange', async () => {
         if (pc.connectionState === 'connected') {
+            clearTimeout(answerGhostTimeout);
             unsubCandidates(); 
             try {
                 await deleteDoc(doc(db, "rooms", roomId, "answers", peerId, "incoming", myId));
