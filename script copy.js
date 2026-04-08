@@ -43,24 +43,21 @@ async function signIn() {
 }
 
 async function getIceServers() {
-    const iceServers = [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" }
-    ];
-
     try {
         const response = await fetch("https://mhs-chat.metered.live/api/v1/turn/credentials?apiKey=60346c336ffff46e32cf32b5d08f206e1875");
-        if (response.ok) {
-            const turnServers = await response.json();
-            iceServers.push(...turnServers);
-        } else {
-            console.warn("Failed to fetch TURN credentials, using only STUN servers.");
-        }
+        if (!response.ok) throw new Error("Failed");
+        return await response.json();
     } catch (e) {
-        console.warn("Could not fetch TURN credentials, using only STUN servers:", e);
+        console.warn("Could not fetch TURN credentials, falling back to STUN:", e);
+        return [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" }
+        ];
     }
-
-    return iceServers;
+    // return [
+    //     { urls: "stun:stun.l.google.com:19302" },
+    //     { urls: "stun:stun1.l.google.com:19302" }
+    // ];
 }
 
 function logMessage(text, sender) {
@@ -93,20 +90,6 @@ function logMessage(text, sender) {
 function createPeerConnection(peerId) {
     const pc = new RTCPeerConnection({ iceServers });
     const localCandidates = []; // Array to hold candidates locally
-
-    const name = peerNames[peerId] || peerId.slice(0, 6);
-    // logging
-    pc.onconnectionstatechange = () => {
-        logMessage(`Connection with ${name}: ${pc.connectionState}`, "System");
-    };
-
-    // Track ICE gathering (Looking for a network path)
-    pc.onicegatheringstatechange = () => {
-        console.log(`ICE Gathering (${name}): ${pc.iceGatheringState}`);
-        if (pc.iceGatheringState === "gathering") {
-            logMessage(`Searching for connection paths to ${name}...`, "System");
-        }
-    };
 
     pc.onicecandidate = (event) => {
         if (event.candidate) {
@@ -247,7 +230,6 @@ async function enterRoom() {
     roomId = ROOM_ID;
     iceServers = await getIceServers();
 
-    /*
     try {
         const stuckOffers = await getDocs(collection(db, "rooms", roomId, "offers", myId, "incoming"));
         stuckOffers.forEach(snap => deleteDoc(snap.ref));
@@ -262,7 +244,7 @@ async function enterRoom() {
     } catch (e) {
         console.warn("Cleanup sweep failed, moving on:", e);
     }
-    */
+
     const myJoinTime = Date.now();
     roomDisplay.innerHTML = `Signed in as <b>${currentUser.displayName}</b>`;
 
