@@ -14,10 +14,9 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// Prompt for name right away, fallback to Anonymous if left blank
 const currentUser = {
     uid: crypto.randomUUID(),
-    displayName: "Anonymous", // We will overwrite this later
+    displayName: "Anonymous",
     photoURL: "https://www.gravatar.com/avatar/"
 };
 
@@ -25,6 +24,11 @@ const peerNames = {};
 
 const ROOM_ID = "camping";
 const myId = crypto.randomUUID();
+// let myId = sessionStorage.getItem("webrtc_myId");
+// if (!myId) {
+//     myId = crypto.randomUUID();
+//     sessionStorage.setItem("webrtc_myId", myId);
+// }
 let roomId = null;
 let iceServers = null;
 
@@ -86,27 +90,32 @@ function createPeerConnection(peerId) {
     const name = peerNames[peerId] || peerId.slice(0, 6);
     
     pc.onconnectionstatechange = () => {
-        logMessage(`Connection with ${name}: ${pc.connectionState}`, "System");
+        // logMessage(`Connection with ${name}: ${pc.connectionState}`, "System");
     };
 
     pc.onicegatheringstatechange = () => {
         console.log(`ICE Gathering (${name}): ${pc.iceGatheringState}`);
         if (pc.iceGatheringState === "gathering") {
-            logMessage(`Searching for connection paths to ${name}...`, "System");
+            // logMessage(`Searching for connection paths to ${name}...`, "System");
         }
     };
 
     pc.onicecandidate = (event) => {
+
+        if (pc.connectionState === 'connected') return;
+
         if (event.candidate) {
             candidateBatch.push(event.candidate.toJSON());
 
             if (!batchTimeout) {
                 batchTimeout = setTimeout(() => {
-                    setDoc(
-                        doc(db, "rooms", roomId, "candidates", peerId, "incoming", myId), 
-                        { candidates: arrayUnion(...candidateBatch) }, 
-                        { merge: true }
-                    );
+                    if (pc.connectionState !== 'connected') {
+                        setDoc(
+                            doc(db, "rooms", roomId, "candidates", peerId, "incoming", myId), 
+                            { candidates: arrayUnion(...candidateBatch) }, 
+                            { merge: true }
+                        );
+                    }
                     candidateBatch = [];
                     batchTimeout = null;
                 }, 2000); // Send batches every 2000ms
@@ -115,11 +124,13 @@ function createPeerConnection(peerId) {
             // Gathering is complete. If there are any candidates left in the batch, send them now.
             if (candidateBatch.length > 0) {
                 clearTimeout(batchTimeout);
-                setDoc(
-                    doc(db, "rooms", roomId, "candidates", peerId, "incoming", myId), 
-                    { candidates: arrayUnion(...candidateBatch) }, 
-                    { merge: true }
-                );
+                if (pc.connectionState !== 'connected') {
+                    setDoc(
+                        doc(db, "rooms", roomId, "candidates", peerId, "incoming", myId), 
+                        { candidates: arrayUnion(...candidateBatch) }, 
+                        { merge: true }
+                    );
+                }
                 candidateBatch = [];
                 batchTimeout = null;
             }
@@ -149,8 +160,6 @@ function setupDataChannel(channel, peerId) {
 
     channel.onopen = () => {
         logMessage(`${peerNames[peerId] || peerId.slice(0, 6)} joined the chat.`, "System");
-        messageInput.disabled = false;
-        sendButton.disabled = false;
     };
 
     channel.onclose = () => {
@@ -179,7 +188,7 @@ async function connectToPeer(peerId) {
     const ghostTimeout = setTimeout(async () => {
         if (pc.connectionState !== 'connected') {
             const ghostName = peerNames[peerId] || peerId.slice(0, 6);
-            logMessage(`Connection to ${ghostName} timed out. Removing ghost...`, "System");
+            // logMessage(`Connection to ${ghostName} timed out. Removing ghost...`, "System");
             
             try {
                 // Delete their member doc
@@ -369,7 +378,10 @@ const chatScreen = document.getElementById("chatScreen");
 const usernameInput = document.getElementById("usernameInput");
 const signInBtn = document.getElementById("signInBtn");
 
+let isConnecting = false;
 async function handleLogin() {
+    if (isConnecting) return;
+    isConnecting = true;
     // 1. Get the typed name, fallback to Anonymous if blank
     let typedName = usernameInput.value.trim();
     if (typedName !== "") {
