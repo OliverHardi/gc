@@ -409,8 +409,13 @@ usernameInput.addEventListener("keydown", (e) => {
 
 // --- BACKGROUND IMAGE CYCLER ---
 
-const totalImages = 11; 
+const totalImages = 10; 
 let currentImageIndex = 0;
+
+for(let i = 0; i < totalImages; i++) { // Preload images
+    const img = new Image();
+    img.src = `images/n${i}.jpeg`; 
+}
 
 function cycleBackground() {
     // Move to the next index, and loop back to 0 if we hit the limit

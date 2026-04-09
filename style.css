@@ -18,7 +18,7 @@ body {
 #signInScreen,
 #chatScreen {
     background: rgba(10, 16, 30, 0.95);
-    background-image: url('images/malec.jpeg');
+    background-image: url('images/n0.jpeg');
     background-size: cover;
     background-repeat: no-repeat;
     background-position: center;
@@ -273,7 +273,7 @@ body > div:last-of-type {
         rgba(141, 84, 196, 0.45),
         rgba(14, 36, 71, 0.7)
     );
-    mix-blend-mode: overlay;
+    mix-blend-mode: normal;
     opacity: 0.9;
     animation: gradient-move 10s ease-in-out infinite alternate;
     pointer-events: none;
