@@ -15,11 +15,19 @@
     </div>
 
     <div id="chatScreen" style="display:none">
-        <div id="roomDisplay"></div>
-        <button id="signOutBtn" style="display:none">Sign Out</button>
-        <div id="chatbox"></div>
-        <input id="messageInput"  placeholder="Type a message..." />
-        <button id="sendButton">Send</button>
+        <div id="chatSidebar">
+            <h3>Online Users</h3>
+            <ul id="membersList"></ul>
+        </div>
+        <div id="chatMain">
+            <div id="roomDisplay"></div>
+            <div id="chatbox"></div>
+            <div id="inputWrapper">
+                <input id="messageInput"  placeholder="Type a message..." />
+                <button id="sendButton">Send</button>
+            </div>
+        </div>
+        
     </div>
 
 

@@ -73,10 +73,48 @@ body {
 }
 
 /* Chat screen layout */
-#chatScreen {
+/* #chatScreen {
     display: flex;
     flex-direction: column;
     gap: 10px;
+} */
+
+#chatScreen {
+    display: flex;
+    flex-direction: row; /* Pushes the sidebar to the right */
+    gap: 15px;
+}
+
+#chatMain {
+    flex: 80%; 
+    display: flex;
+    flex-direction: column;
+}
+
+#chatSidebar {
+    flex: 20%; 
+    background: rgba(165, 168, 172, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 12px;
+    overflow-y: auto;
+}
+
+#chatSidebar h3 {
+    font-size: 0.95rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+}
+
+#membersList {
+    list-style: none;
+}
+
+#membersList li {
+    font-size: 0.9rem;
+    padding: 4px 0;
 }
 
 /* Room display at the top */
@@ -96,7 +134,7 @@ body {
 }
 
 /* Sign Out Button */
-#signOutBtn {
+/* #signOutBtn {
     padding: 6px 12px;
     font-size: 0.85rem;
     border-radius: 6px;
@@ -112,7 +150,7 @@ body {
 #signOutBtn:hover {
     background: rgba(255, 255, 255, 0.1);
     border-color: rgba(255, 255, 255, 0.4);
-}
+} */
 
 /* Chatbox area */
 #chatbox {
@@ -162,6 +200,13 @@ body {
     text-align: center;
     font-style: italic;
     padding: 4px;
+}
+
+#inputWrapper {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    margin-top: 10px;
 }
 
 /* Input row */
@@ -339,3 +384,4 @@ body > div:last-of-type {
     z-index: 0; /* Keeps the blur behind your text/inputs */
     pointer-events: none; /* Makes sure you can still click the buttons */
 }
+

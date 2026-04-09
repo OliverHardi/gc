@@ -39,6 +39,18 @@ const roomDisplay = document.getElementById("roomDisplay");
 const chatbox = document.getElementById("chatbox");
 const messageInput = document.getElementById("messageInput");
 const sendButton = document.getElementById("sendButton");
+const membersList = document.getElementById("membersList");
+
+function updateMembersList(){
+    membersList.innerHTML = "";
+    usersList.forEach(name => {
+        const li = document.createElement("li");
+        li.textContent = name;
+        membersList.appendChild(li);
+    });
+}
+
+let usersList = [];
 
 async function getIceServers() {
     const iceServers = [
@@ -142,6 +154,8 @@ function createPeerConnection(peerId) {
         console.log(`ICE state with ${peerId}:`, pc.iceConnectionState);
         if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
             logMessage(`${peerNames[peerId] || peerId.slice(0, 6)} left the chat.`, "System");
+            usersList = usersList.filter(name => name !== (peerNames[peerId] || peerId.slice(0, 6)));
+            updateMembersList();
             delete peers[peerId];
             delete dataChannels[peerId];
         }
@@ -160,6 +174,8 @@ function setupDataChannel(channel, peerId) {
 
     channel.onopen = () => {
         logMessage(`${peerNames[peerId] || peerId.slice(0, 6)} joined the chat.`, "System");
+        usersList.push(peerNames[peerId] || peerId.slice(0, 6));
+        updateMembersList();
     };
 
     channel.onclose = () => {
@@ -391,7 +407,7 @@ async function handleLogin() {
     // 2. Hide the sign-in screen, show the chat screen
     signInScreen.style.display = "none";
     chatScreen.style.display = "flex";
-    document.getElementById("signOutBtn").style.display = "block";
+    // document.getElementById("signOutBtn").style.display = "block";
 
     // 3. NOW connect to the database and enter the room
     await enterRoom();
@@ -409,7 +425,7 @@ usernameInput.addEventListener("keydown", (e) => {
 
 // --- BACKGROUND IMAGE CYCLER ---
 
-const totalImages = 10; 
+const totalImages = 13; 
 let currentImageIndex = 0;
 
 for(let i = 0; i < totalImages; i++) { // Preload images
@@ -430,5 +446,5 @@ function cycleBackground() {
     document.getElementById("chatScreen").style.backgroundImage = newImageUrl;
 }
 
-// Change the background every 5 seconds (5000 milliseconds)
 setInterval(cycleBackground, 8000);
+
