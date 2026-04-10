@@ -183,7 +183,11 @@ function setupDataChannel(channel, peerId) {
     };
 
     channel.onmessage = (event) => {
-        logMessage(event.data, peerNames[peerId] || peerId.slice(0, 6));
+        const senderName = peerNames[peerId] || peerId.slice(0, 6);
+        
+        logMessage(event.data, senderName);
+
+        notifyNewMessage(senderName, event.data);
     };
 }
 
@@ -425,7 +429,7 @@ usernameInput.addEventListener("keydown", (e) => {
 
 // --- BACKGROUND IMAGE CYCLER ---
 
-const totalImages = 13; 
+const totalImages = 21; 
 let currentImageIndex = 0;
 
 for(let i = 0; i < totalImages; i++) { // Preload images
@@ -448,3 +452,42 @@ function cycleBackground() {
 
 setInterval(cycleBackground, 8000);
 
+// --- NOTIFICATION SYSTEM ---
+let unreadCount = 0;
+const originalTitle = document.title || "Chat Room";
+const originalFavicon = "favicons/favicon.ico"; // Change this if your default favicon is elsewhere
+
+function changeFavicon(src) {
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.head.appendChild(link);
+    }
+    link.href = src;
+}
+
+function notifyNewMessage(sender, text) {
+    // If the user is looking at the tab, do nothing
+    if (!document.hidden) return; 
+
+    unreadCount++;
+    
+    let s = unreadCount > 1 ? 's' : '';
+    document.title = `(${unreadCount}) New message` + s + ` from ${sender}`;
+    
+    changeFavicon(`favicons/noti.ico`); 
+}
+
+function resetNotifications() {
+    unreadCount = 0;
+    document.title = originalTitle;
+    changeFavicon(originalFavicon);
+}
+
+// Listen for when the user comes back to the tab
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+        resetNotifications();
+    }
+});
