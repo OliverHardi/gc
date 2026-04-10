@@ -439,7 +439,8 @@ for(let i = 0; i < totalImages; i++) { // Preload images
 
 function cycleBackground() {
     // Move to the next index, and loop back to 0 if we hit the limit
-    currentImageIndex = (currentImageIndex + 1) % totalImages;
+    // currentImageIndex = (currentImageIndex + 1) % totalImages;
+    currentImageIndex = Math.random() * totalImages | 0; // Random index for more variety
     
     // Construct the new file path
     // IMPORTANT: Make sure the extension (.jpeg, .jpg, .png) matches your actual files
