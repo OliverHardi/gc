@@ -385,3 +385,27 @@ body > div:last-of-type {
     pointer-events: none; /* Makes sure you can still click the buttons */
 }
 
+#emojiBtn {
+    margin-top: 8px;
+    padding: 7px 12px;
+    font-size: 1.2rem;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.08);
+    color: #f5f5f5;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+    transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.15s;
+}
+
+#emojiBtn:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.16);
+    box-shadow: 0 5px 14px rgba(0, 0, 0, 0.45);
+}
+
+#emojiBtn:active {
+    transform: translateY(0);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+}
